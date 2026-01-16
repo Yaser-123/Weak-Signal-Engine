@@ -11,6 +11,7 @@ from src.memory.cluster_memory import ClusterMemory
 from src.clustering.contextualizer import contextualize_signal
 from src.clustering.persistence import check_persistence
 from src.clustering.proto_cluster import create_proto_cluster
+from src.clustering.intra_batch_cluster import cluster_batch
 from src.dashboard.feed import build_emerging_feed
 
 VECTOR_SIZE = 384
@@ -62,49 +63,39 @@ def main():
         vector_size=VECTOR_SIZE
     )
 
-    # 3) Embed & store signals
-    embeddings = [embedding_model.embed(s.text) for s in all_new_signals]
-    signal_memory.upsert_signals(all_new_signals, embeddings)
-
-    # 4) Contextualize, check persistence, build proto-clusters
-    proto_clusters = []
-    batch_contexts = []
+    # 3) Collect embeddings with signals
+    signals_with_embeddings = []
 
     for signal in all_new_signals:
-        context = contextualize_signal(
-            signal=signal,
-            embedding_model=embedding_model,
-            memory=signal_memory,
-            top_k=10
-        )
+        embedding = embedding_model.embed(signal.text)
+        signals_with_embeddings.append({
+            "signal": signal.to_dict(),
+            "embedding": embedding
+        })
 
-        persistence = check_persistence(context, min_similar=2)
+    # 4) Store signals in memory
+    embeddings = [item["embedding"] for item in signals_with_embeddings]
+    signal_memory.upsert_signals(all_new_signals, embeddings)
 
-        if persistence["is_persistent"]:
-            batch_contexts.append(context)
+    # 5) Run intra-batch clustering (STAGE 1: Loose semantic grouping)
+    batch_clusters = cluster_batch(
+        signals_with_embeddings,
+        similarity_threshold=0.45
+    )
 
-    if batch_contexts:
-        # Merge all contexts into ONE proto-cluster
-        merged_signals = []
-        seen_ids = set()
-        for ctx in batch_contexts:
-            signal = Signal.from_dict(ctx["signal"])
-            similar_signals = [Signal.from_dict(s) for s in ctx["similar_signals"]]
-            all_sigs = [signal] + similar_signals
-            for sig in all_sigs:
-                if sig.signal_id not in seen_ids:
-                    merged_signals.append(sig)
-                    seen_ids.add(sig.signal_id)
+    # 6) Convert each batch cluster → proto-cluster
+    proto_clusters = []
 
+    for c in batch_clusters:
         proto_cluster = {
             "cluster_id": str(uuid.uuid4()),
-            "signals": [s.to_dict() for s in merged_signals],
-            "signal_count": len(merged_signals),
+            "signals": c["signals"],
+            "signal_count": len(c["signals"]),
             "created_at": datetime.now(UTC).isoformat()
         }
         proto_clusters.append(proto_cluster)
 
-        # 5) Store proto-cluster in warm memory
+        # Store proto-cluster in warm memory
         cluster_memory.upsert_cluster(
             proto_cluster=proto_cluster,
             embedding_model=embedding_model
@@ -112,12 +103,26 @@ def main():
 
     print(f"[INFO] Proto-clusters created: {len(proto_clusters)}")
 
-    if not proto_clusters:
-        print("[INFO] No persistent patterns yet.")
+    # 7) STAGE 2: Split by size (candidate vs active)
+    ACTIVE_MIN = 3
+
+    candidate_clusters = [
+        c for c in proto_clusters if c["signal_count"] < ACTIVE_MIN
+    ]
+
+    active_clusters = [
+        c for c in proto_clusters if c["signal_count"] >= ACTIVE_MIN
+    ]
+
+    print(f"[INFO] Candidate clusters (1-2 signals, stored quietly): {len(candidate_clusters)}")
+    print(f"[INFO] Active clusters (≥3 signals, shown in feed): {len(active_clusters)}")
+
+    if not active_clusters:
+        print("[INFO] No active clusters yet (all are embryonic with <3 signals).")
         return
 
-    # 6) Build Emerging Feed
-    feed = build_emerging_feed(proto_clusters, recent_days=30)
+    # 8) Build Emerging Feed (only from active clusters)
+    feed = build_emerging_feed(active_clusters, recent_days=30)
 
     print("\n=== EMERGING CLUSTERS FEED ===")
     for item in feed:

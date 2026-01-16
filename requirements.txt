@@ -2,3 +2,4 @@
 sentence-transformers
 qdrant-client
 feedparser
+numpy
