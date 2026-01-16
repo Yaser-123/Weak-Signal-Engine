@@ -1,3 +1,4 @@
 # Add your dependencies here
 sentence-transformers
 qdrant-client
+feedparser
