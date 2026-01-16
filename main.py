@@ -126,7 +126,9 @@ def main():
 
     print("\n=== EMERGING CLUSTERS FEED ===")
     for item in feed:
-        print(item)
+        print(f"📈 {item['representative_title']}...")
+        print(f"   Size: {item['signal_count']} | Level: {item['emergence_level']} | Growth: {item['growth_ratio']:.2f}")
+        print()
 
 
 if __name__ == "__main__":

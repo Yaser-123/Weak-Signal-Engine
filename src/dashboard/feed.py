@@ -26,7 +26,8 @@ def build_emerging_feed(
             "signal_count": cluster["signal_count"],
             "emergence_level": emergence["emergence_level"],
             "growth_ratio": emergence["growth_ratio"],
-            "created_at": cluster["created_at"]
+            "created_at": cluster["created_at"],
+            "representative_title": cluster["signals"][0]["text"][:120] if cluster["signals"] else "No signals"
         })
 
     feed.sort(
