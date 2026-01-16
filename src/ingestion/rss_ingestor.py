@@ -32,7 +32,7 @@ def ingest_rss_feed(feed_url: str, domain: str, subdomain: str) -> List[Signal]:
     new_signals = []
 
     for entry in feed.entries:
-        item_id = entry.get("id") or entry.get("link")
+        item_id = f"{feed_url}::{entry.get('id') or entry.get('link')}"
         if not item_id or item_id in seen_ids:
             continue
 

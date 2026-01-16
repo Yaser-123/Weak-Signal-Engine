@@ -1,7 +1,7 @@
 # src/clustering/proto_cluster.py
 
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC
 import uuid
 
 
@@ -17,5 +17,5 @@ def create_proto_cluster(
         "cluster_id": str(uuid.uuid4()),
         "signals": all_signals,
         "signal_count": len(all_signals),
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(UTC).isoformat()
     }
