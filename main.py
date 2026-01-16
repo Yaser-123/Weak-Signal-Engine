@@ -12,6 +12,7 @@ from src.clustering.contextualizer import contextualize_signal
 from src.clustering.persistence import check_persistence
 from src.clustering.proto_cluster import create_proto_cluster
 from src.clustering.intra_batch_cluster import cluster_batch
+from src.clustering.cluster_evolution import evolve_clusters
 from src.dashboard.feed import build_emerging_feed
 
 VECTOR_SIZE = 384
@@ -36,6 +37,8 @@ RSS_FEEDS = [
 
 
 def main():
+    # Initialize persistent candidate clusters (in-memory for hackathon)
+    candidate_clusters = []
     # 1) Ingest RSS from all feeds
     all_new_signals = []
 
@@ -83,39 +86,36 @@ def main():
         similarity_threshold=0.45
     )
 
-    # 6) Convert each batch cluster → proto-cluster
-    proto_clusters = []
+    # 6) Evolve candidate clusters (merge new batch clusters into existing candidates)
+    candidate_clusters = evolve_clusters(
+        existing_candidates=candidate_clusters,
+        new_batch_clusters=batch_clusters,
+        embedding_model=embedding_model,
+        similarity_threshold=0.70
+    )
 
-    for c in batch_clusters:
-        proto_cluster = {
-            "cluster_id": str(uuid.uuid4()),
-            "signals": c["signals"],
-            "signal_count": len(c["signals"]),
-            "created_at": datetime.now(UTC).isoformat()
-        }
-        proto_clusters.append(proto_cluster)
+    print(f"[INFO] Total candidate clusters: {len(candidate_clusters)}")
 
-        # Store proto-cluster in warm memory
-        cluster_memory.upsert_cluster(
-            proto_cluster=proto_cluster,
-            embedding_model=embedding_model
-        )
-
-    print(f"[INFO] Proto-clusters created: {len(proto_clusters)}")
-
-    # 7) STAGE 2: Split by size (candidate vs active)
+    # 7) Split candidate vs active (same logic as before)
     ACTIVE_MIN = 3
 
-    candidate_clusters = [
-        c for c in proto_clusters if c["signal_count"] < ACTIVE_MIN
+    quiet_candidates = [
+        c for c in candidate_clusters if c["signal_count"] < ACTIVE_MIN
     ]
 
     active_clusters = [
-        c for c in proto_clusters if c["signal_count"] >= ACTIVE_MIN
+        c for c in candidate_clusters if c["signal_count"] >= ACTIVE_MIN
     ]
 
-    print(f"[INFO] Candidate clusters (1-2 signals, stored quietly): {len(candidate_clusters)}")
+    print(f"[INFO] Quiet candidates (1-2 signals, stored quietly): {len(quiet_candidates)}")
     print(f"[INFO] Active clusters (≥3 signals, shown in feed): {len(active_clusters)}")
+
+    # Store active clusters in warm memory
+    for active_cluster in active_clusters:
+        cluster_memory.upsert_cluster(
+            proto_cluster=active_cluster,
+            embedding_model=embedding_model
+        )
 
     if not active_clusters:
         print("[INFO] No active clusters yet (all are embryonic with <3 signals).")
