@@ -1,6 +1,6 @@
 # src/memory/qdrant_client.py
 
-from typing import List
+from typing import List, Dict, Any
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
 
@@ -35,3 +35,17 @@ class QdrantMemory:
             collection_name=self.collection_name,
             points=points
         )
+
+    def search_similar_signals(
+        self,
+        embedding: List[float],
+        top_k: int = 10
+    ) -> List[Dict[str, Any]]:
+        results = self.client.query_points(
+            collection_name=self.collection_name,
+            query=embedding,
+            limit=top_k,
+            with_payload=True
+        )
+
+        return [res.payload for res in results.points]
