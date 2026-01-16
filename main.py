@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, UTC
+import argparse
 
 from src.ingestion.rss_ingestor import ingest_rss_feed
 from src.ingestion.signal import Signal
@@ -36,7 +37,17 @@ RSS_FEEDS = [
 ]
 
 
-def main():
+def main(reset_seen_ids=False):
+    # Reset seen IDs if requested
+    if reset_seen_ids:
+        import os
+        seen_ids_file = "seen_ids.json"
+        if os.path.exists(seen_ids_file):
+            os.remove(seen_ids_file)
+            print("[INFO] Reset seen IDs - starting fresh ingestion")
+        else:
+            print("[INFO] No seen IDs file to reset")
+
     # Initialize persistent candidate clusters (in-memory for hackathon)
     candidate_clusters = []
     # 1) Ingest RSS from all feeds
@@ -132,4 +143,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Weak Signal Engine - Emerging Technology Feed")
+    parser.add_argument("--reset", action="store_true", help="Reset seen IDs and start fresh ingestion")
+    args = parser.parse_args()
+
+    main(reset_seen_ids=args.reset)
