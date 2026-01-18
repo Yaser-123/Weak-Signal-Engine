@@ -6,6 +6,7 @@ from src.dashboard.feed import build_emerging_feed
 from src.dashboard.gemini_explainer import generate_human_cluster_title, explain_cluster_with_gemini
 from src.dashboard.graph import build_cluster_graph
 from src.dashboard.search import search_clusters_hybrid
+from src.dashboard.time_filter import compute_time_slider_bounds, filter_clusters_by_time
 from src.embeddings.embedding_model import EmbeddingModel
 from streamlit.components.v1 import html
 
@@ -19,6 +20,31 @@ def get_embedding_model():
 embedding_model = get_embedding_model()
 
 st.title("📡 Weak Signal Engine — Emerging Trends")
+
+# === DYNAMIC TIME SLIDER ===
+candidates = load_candidates()
+
+if candidates:
+    # Compute slider bounds from actual data
+    min_days, max_days, default_days = compute_time_slider_bounds(candidates)
+    
+    st.subheader("⏰ Time Range Filter")
+    time_range_days = st.slider(
+        f"Show signals from the last X days (oldest signal: {max_days} days ago)",
+        min_value=min_days,
+        max_value=max_days,
+        value=default_days,
+        help="Filter all clusters and graphs to show only recent signals"
+    )
+    
+    # Apply time filter to all candidates
+    candidates = filter_clusters_by_time(candidates, time_range_days)
+    
+    st.caption(f"📊 Showing signals from the last **{time_range_days} days** | {len(candidates)} clusters after filtering")
+    st.divider()
+else:
+    st.warning("No clusters available. Run main.py first.")
+    st.stop()
 
 # === INTENT-BASED SEARCH ===
 st.subheader("🔍 Search Emerging Signals")
@@ -39,8 +65,6 @@ with col2:
 
 # Perform search
 if search_button and search_query:
-    candidates = load_candidates()
-    
     if candidates:
         with st.spinner("Searching across all clusters..."):
             results = search_clusters_hybrid(
@@ -92,10 +116,10 @@ if search_button and search_query:
 st.divider()
 
 # === EXISTING CONTENT ===
-candidates = load_candidates()
+# Note: candidates already filtered by time slider above
 
 if not candidates:
-    st.warning("No candidate clusters found. Run main.py first.")
+    st.info(f"No clusters with signals in the last {time_range_days} days. Try increasing the time range.")
     st.stop()
 
 ACTIVE_MIN = 3
@@ -174,6 +198,38 @@ else:
 st.subheader("🕸 Cluster Relationship Graph")
 
 if active_clusters:
+    # Legend above the graph
+    st.markdown("### 📖 Graph Legend")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 8px; border-left: 4px solid #f4b000;'>
+            <span style='font-size: 24px;'>🟡</span> <strong>Cluster</strong><br>
+            <small style='color: #aaa;'>Emerging topic (aggregates signals)</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 8px; border-left: 4px solid #8ecae6;'>
+            <span style='font-size: 24px;'>🔵</span> <strong>Signal</strong><br>
+            <small style='color: #aaa;'>Individual article or research paper</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 8px; border-left: 4px solid #666;'>
+            <span style='font-size: 24px;'>➖</span> <strong>Edge</strong><br>
+            <small style='color: #aaa;'>Semantic similarity / evidence link</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("**💡 Tip:** Drag cluster centers to move entire groups, or drag signal dots individually to rearrange.")
+    st.divider()
+    
     # Add labels to clusters for graph
     for c in active_clusters:
         signal_texts = [s['text'] for s in c["signals"]]
