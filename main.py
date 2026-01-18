@@ -9,6 +9,7 @@ from src.ingestion.signal import Signal
 from src.embeddings.embedding_model import EmbeddingModel
 from src.memory.qdrant_client import QdrantMemory
 from src.memory.cluster_memory import ClusterMemory
+from src.memory.candidate_store import load_candidates, save_candidates
 from src.clustering.contextualizer import contextualize_signal
 from src.clustering.persistence import check_persistence
 from src.clustering.proto_cluster import create_proto_cluster
@@ -48,8 +49,9 @@ def main(reset_seen_ids=False):
         else:
             print("[INFO] No seen IDs file to reset")
 
-    # Initialize persistent candidate clusters (in-memory for hackathon)
-    candidate_clusters = []
+    # Initialize persistent candidate clusters (load from disk)
+    candidate_clusters = load_candidates()
+    print(f"[INFO] Loaded candidate clusters from disk: {len(candidate_clusters)}")
     # 1) Ingest RSS from all feeds
     all_new_signals = []
 
@@ -127,6 +129,10 @@ def main(reset_seen_ids=False):
             proto_cluster=active_cluster,
             embedding_model=embedding_model
         )
+
+    # Save candidate clusters to disk (cold memory)
+    save_candidates(candidate_clusters)
+    print(f"[INFO] Saved candidate clusters to disk: {len(candidate_clusters)}")
 
     if not active_clusters:
         print("[INFO] No active clusters yet (all are embryonic with <3 signals).")
