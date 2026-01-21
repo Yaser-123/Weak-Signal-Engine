@@ -48,8 +48,8 @@ def compute_time_slider_bounds(clusters: List[Dict[str, Any]]) -> Tuple[int, int
     if max_days <= 1:
         max_days = 7  # Default to 7 days for slider to work
     
-    # Compute default as 30% of max_days, but at least 7 days
-    default_days = max(7, int(0.3 * max_days))
+    # Compute default as ALL days (show all historical signals for weak signal accumulation)
+    default_days = max_days
     
     # Ensure default doesn't exceed max
     default_days = min(default_days, max_days)

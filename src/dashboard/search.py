@@ -118,7 +118,7 @@ def search_clusters_hybrid(
     Final score = 0.7 * semantic_score + 0.3 * lexical_score
     
     Filters:
-    - Keep if semantic_score >= 0.45 OR lexical_score >= 0.2
+    - Keep if semantic_score >= 0.30 OR lexical_score >= 0.10
     - Keep if final_score >= min_final_score
     
     Args:
@@ -151,6 +151,19 @@ def search_clusters_hybrid(
     results = []
     
     for cluster in clusters:
+        # Compute centroid if missing
+        if "centroid" not in cluster and cluster.get("signals"):
+            try:
+                signal_texts = [s.get("text", "") for s in cluster["signals"]]
+                if signal_texts:
+                    signal_embeddings = [embedding_model.embed(text) for text in signal_texts]
+                    # Compute centroid (mean of embeddings)
+                    centroid = np.mean(np.array(signal_embeddings), axis=0).tolist()
+                    cluster["centroid"] = centroid
+            except Exception as e:
+                print(f"Error computing centroid for cluster {cluster.get('cluster_id', 'unknown')}: {e}")
+                continue
+        
         # Skip clusters without centroids
         if "centroid" not in cluster:
             continue
@@ -166,8 +179,8 @@ def search_clusters_hybrid(
         final_score = 0.7 * semantic_score + 0.3 * lexical_score
         
         # 4. Filter by thresholds
-        # Keep if: (semantic >= 0.40 OR lexical >= 0.15) AND final >= min_final_score
-        if (semantic_score >= 0.40 or lexical_score >= 0.15) and final_score >= min_final_score:
+        # Keep if: (semantic >= 0.30 OR lexical >= 0.10) AND final >= min_final_score
+        if (semantic_score >= 0.30 or lexical_score >= 0.10) and final_score >= min_final_score:
             # Determine cluster type
             cluster_type = "Active" if cluster.get("signal_count", 0) >= 3 else "Candidate"
             

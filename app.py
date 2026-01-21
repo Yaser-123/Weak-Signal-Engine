@@ -7,6 +7,7 @@ from src.dashboard.gemini_explainer import generate_human_cluster_title, explain
 from src.dashboard.graph import build_cluster_graph
 from src.dashboard.search import search_clusters_hybrid
 from src.dashboard.time_filter import compute_time_slider_bounds, filter_clusters_by_time
+from src.dashboard.utils import format_signal_date
 from src.embeddings.embedding_model import EmbeddingModel
 from streamlit.components.v1 import html
 
@@ -24,23 +25,26 @@ st.title("📡 Weak Signal Engine — Emerging Trends")
 # === DYNAMIC TIME SLIDER ===
 candidates = load_candidates()
 
+# Keep original clusters for full signal display
+original_candidates = candidates.copy()
+
 if candidates:
     # Compute slider bounds from actual data
     min_days, max_days, default_days = compute_time_slider_bounds(candidates)
     
     st.subheader("⏰ Time Range Filter")
     time_range_days = st.slider(
-        f"Show signals from the last X days (oldest signal: {max_days} days ago)",
+        f"Show signals from the last X days (oldest signal: {max_days} days ago) - Default: ALL signals",
         min_value=min_days,
         max_value=max_days,
         value=default_days,
-        help="Filter all clusters and graphs to show only recent signals"
+        help="Filter all clusters and graphs to show only recent signals. Default shows all historical signals for trend accumulation."
     )
     
     # Apply time filter to all candidates
     candidates = filter_clusters_by_time(candidates, time_range_days)
     
-    st.caption(f"📊 Showing signals from the last **{time_range_days} days** | {len(candidates)} clusters after filtering")
+    st.caption(f"📊 Showing signals from the last **{time_range_days} days** | {len(candidates)} clusters after filtering | Default: ALL historical signals")
     st.divider()
 else:
     st.warning("No clusters available. Run main.py first.")
@@ -79,7 +83,11 @@ if search_button and search_query:
             
             for idx, result in enumerate(results):
                 with st.container():
-                    # Generate title
+                    # Get original cluster data for full signal list
+                    original_cluster = next(c for c in original_candidates if c["cluster_id"] == result["cluster_id"])
+                    all_signals = original_cluster["signals"]
+                    
+                    # Generate title using filtered signals
                     signal_texts = [s['text'] for s in result["signals"]]
                     cluster_id = result["cluster_id"]
                     title = generate_human_cluster_title(signal_texts, cluster_id=cluster_id)
@@ -102,10 +110,10 @@ if search_button and search_query:
                     with col_e:
                         st.metric("Signals", result["signal_count"])
                     
-                    # Expandable signal list
-                    with st.expander(f"View {result['signal_count']} signals"):
-                        for sig in result["signals"]:
-                            st.markdown(f"- {sig['text']}")
+                    # Expandable signal list - show ALL signals
+                    with st.expander(f"View all {len(all_signals)} signals (filtered: {result['signal_count']})"):
+                        for sig in all_signals:
+                            st.markdown(f"• [{format_signal_date(sig['timestamp'])}] {sig['text']}")
                     
                     st.divider()
         else:
@@ -136,11 +144,43 @@ st.subheader("🔥 Active Emerging Clusters")
 
 if active_clusters:
     feed = build_emerging_feed(active_clusters)
+    
+    # Pagination for active clusters
+    clusters_per_page = 5
+    total_pages = (len(feed) + clusters_per_page - 1) // clusters_per_page
+    
+    if total_pages > 1:
+        col_page, col_info = st.columns([1, 3])
+        with col_page:
+            page = st.selectbox(
+                f"Page",
+                range(1, total_pages + 1),
+                key="active_clusters_page"
+            )
+        with col_info:
+            st.caption(f"📊 Showing {clusters_per_page} clusters per page | Total: {len(feed)} active clusters")
+    else:
+        page = 1
+        st.caption(f"📊 Total: {len(feed)} active clusters")
+    
+    # Calculate slice
+    start_idx = (page - 1) * clusters_per_page
+    end_idx = min(start_idx + clusters_per_page, len(feed))
+    page_feed = feed[start_idx:end_idx]
+    
+    if total_pages > 1:
+        st.markdown(f"*Showing clusters {start_idx + 1}–{end_idx} of {len(feed)}*")
 
-    for item in feed:
+    for item in page_feed:
         with st.container():
-            # Generate meaningful cluster label using Gemini
+            # Get filtered cluster data for display
             cluster_data = next(c for c in active_clusters if c["cluster_id"] == item["cluster_id"])
+            
+            # Get original cluster data for full signal list
+            original_cluster = next(c for c in original_candidates if c["cluster_id"] == item["cluster_id"])
+            all_signals = original_cluster["signals"]
+            
+            # Use filtered signals for title generation (recent signals are more representative)
             signal_texts = [s['text'] for s in cluster_data["signals"]]
             
             # Use cluster_id as stable cache key
@@ -154,10 +194,34 @@ if active_clusters:
                 f"**Growth:** {item['growth_ratio']:.2f}"
             )
 
-            # Expandable signals
-            with st.expander(f"Show {item['signal_count']} signals"):
-                for s in cluster_data["signals"]:
-                    st.markdown(f"- {s['text']}")
+            # Expandable signals - show ALL signals from the cluster with pagination
+            with st.expander(f"Show all {len(all_signals)} signals (filtered: {item['signal_count']})"):
+                # Sort signals by recency
+                sorted_signals = sorted(all_signals, key=lambda s: s['timestamp'], reverse=True)
+                
+                # Pagination within expander for large signal lists
+                signals_per_page = 20
+                total_signal_pages = (len(sorted_signals) + signals_per_page - 1) // signals_per_page
+                
+                if total_signal_pages > 1:
+                    signal_page = st.selectbox(
+                        f"Signals page (showing {signals_per_page} per page)",
+                        range(1, total_signal_pages + 1),
+                        key=f"signals_page_{cluster_data['cluster_id']}"
+                    )
+                else:
+                    signal_page = 1
+                
+                # Calculate signal slice
+                sig_start = (signal_page - 1) * signals_per_page
+                sig_end = min(sig_start + signals_per_page, len(sorted_signals))
+                page_signals = sorted_signals[sig_start:sig_end]
+                
+                if total_signal_pages > 1:
+                    st.caption(f"Showing signals {sig_start + 1}–{sig_end} of {len(sorted_signals)}")
+                
+                for s in page_signals:
+                    st.markdown(f"• [{format_signal_date(s['timestamp'])}] {s['text']}")
 
             # Cluster Explainer Chat
             st.markdown("#### 💬 Ask about this cluster")
@@ -248,13 +312,41 @@ if active_clusters:
     selected_cluster = st.selectbox(
         "Select a cluster to view full signals",
         active_clusters,
-        format_func=lambda c: c["label"]
+        format_func=lambda c: f"{c['label']} ({c['signal_count']} signals)"
     )
 
-    st.markdown(f"**{selected_cluster['label']}** ({selected_cluster['signal_count']} signals)")
-
-    for s in selected_cluster["signals"]:
-        st.markdown(f"**• {s['text']}**")
+    # Get original cluster data for full signal list
+    original_cluster = next(c for c in original_candidates if c["cluster_id"] == selected_cluster["cluster_id"])
+    all_signals = original_cluster["signals"]
+    
+    # Sort signals by recency (most recent first)
+    sorted_signals = sorted(all_signals, key=lambda s: s['timestamp'], reverse=True)
+    
+    st.markdown(f"**{selected_cluster['label']}**")
+    st.caption(f"Total signals: {len(sorted_signals)} | Shown in graph: {min(len(sorted_signals), 25)}")
+    
+    # Pagination for large clusters
+    signals_per_page = 20
+    total_pages = (len(sorted_signals) + signals_per_page - 1) // signals_per_page
+    
+    if total_pages > 1:
+        page = st.selectbox(
+            f"Page (showing {signals_per_page} signals per page)",
+            range(1, total_pages + 1),
+            key=f"page_{selected_cluster['cluster_id']}"
+        )
+    else:
+        page = 1
+    
+    # Calculate slice
+    start_idx = (page - 1) * signals_per_page
+    end_idx = min(start_idx + signals_per_page, len(sorted_signals))
+    page_signals = sorted_signals[start_idx:end_idx]
+    
+    st.markdown(f"*Showing signals {start_idx + 1}–{end_idx} of {len(sorted_signals)}*")
+    
+    for s in page_signals:
+        st.markdown(f"**• [{format_signal_date(s['timestamp'])}] {s['text']}**")
         st.divider()
 else:
     st.info("No active clusters to show details.")
@@ -263,13 +355,17 @@ st.subheader("🌱 Candidate Clusters (Incubating)")
 
 if candidate_clusters:
     for c in candidate_clusters:
-        # Generate label for candidate cluster
+        # Get original cluster data for full signal list
+        original_cluster = next(orig_c for orig_c in original_candidates if orig_c["cluster_id"] == c["cluster_id"])
+        all_signals = original_cluster["signals"]
+        
+        # Generate label for candidate cluster using filtered signals
         signal_texts = [s['text'] for s in c["signals"]]
         cluster_id = c["cluster_id"]
         c["label"] = generate_human_cluster_title(signal_texts, cluster_id=cluster_id)
         
-        with st.expander(f"{c['label']} (size={c['signal_count']})"):
-            for s in c["signals"]:
-                st.markdown(f"- {s['text']}")
+        with st.expander(f"{c['label']} (filtered size={c['signal_count']}, total={len(all_signals)})"):
+            for s in all_signals:
+                st.markdown(f"• [{format_signal_date(s['timestamp'])}] {s['text']}")
 else:
     st.info("No candidate clusters yet.")

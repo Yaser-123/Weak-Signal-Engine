@@ -1,6 +1,10 @@
 import networkx as nx
 from pyvis.network import Network
 import numpy as np
+import math
+
+# Configuration
+MAX_SIGNALS_PER_CLUSTER = 25
 
 def cosine(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
@@ -13,9 +17,18 @@ def build_cluster_graph(clusters, threshold=0.55):
         cluster_label = cluster["label"]
         signals = cluster["signals"]
         embeddings = cluster["embeddings"]
+        total_signal_count = len(signals)
 
-        # Add signal nodes
-        for i, s in enumerate(signals):
+        # Sort signals by timestamp (most recent first)
+        signals_with_embeddings = list(zip(signals, embeddings))
+        signals_with_embeddings.sort(key=lambda x: x[0]["timestamp"], reverse=True)
+        
+        # Cap visible signals
+        visible_signals = signals_with_embeddings[:MAX_SIGNALS_PER_CLUSTER]
+        hidden_count = total_signal_count - len(visible_signals)
+
+        # Add visible signal nodes
+        for i, (s, emb) in enumerate(visible_signals):
             short_label = s["text"][:40] + "…"
             G.add_node(
                 s["signal_id"],
@@ -29,26 +42,35 @@ def build_cluster_graph(clusters, threshold=0.55):
                 borderWidthSelected=0
             )
 
-        # Add signal-signal edges (only strong connections to reduce noise)
-        for i in range(len(signals)):
-            for j in range(i+1, len(signals)):
-                sim = cosine(embeddings[i], embeddings[j])
+        # Add signal-signal edges (only between visible signals and only strong connections)
+        for i in range(len(visible_signals)):
+            for j in range(i+1, len(visible_signals)):
+                sim = cosine(visible_signals[i][1], visible_signals[j][1])
                 if sim > 0.65:  # Higher threshold for cleaner graph
+                    # Fade edge color for large clusters
+                    edge_opacity = 1.0 if total_signal_count < 50 else 0.5 if total_signal_count < 100 else 0.3
+                    edge_color = f"rgba(14, 17, 23, {edge_opacity})"
                     G.add_edge(
-                        signals[i]["signal_id"],
-                        signals[j]["signal_id"],
+                        visible_signals[i][0]["signal_id"],
+                        visible_signals[j][0]["signal_id"],
                         value=sim,
-                        color="#0E1117",
+                        color=edge_color,
                         smooth=False  # Straight lines
                     )
 
+        # Calculate logarithmic cluster node size based on total signal count
+        # Formula: base_size + log_factor * log(1 + signal_count)
+        base_size = 35
+        log_factor = 15
+        cluster_size = base_size + log_factor * math.log(1 + total_signal_count)
+        
         # Add cluster anchor node
         cluster_node_id = f"cluster_{cluster_id}"
         G.add_node(
             cluster_node_id,
             label=cluster_label,
-            title=f"{cluster_label} ({len(signals)} signals)",
-            size=35,
+            title=f"{cluster_label} ({total_signal_count} signals)",
+            size=cluster_size,
             color="#f4b000",
             font={"size": 18, "color": "white"},
             physics=True,  # Enable physics for dragging
@@ -56,14 +78,44 @@ def build_cluster_graph(clusters, threshold=0.55):
             borderWidthSelected=0
         )
 
-        # Connect cluster to signals
-        for s in signals:
+        # Connect cluster to visible signals
+        # Fade edge color for large clusters
+        edge_opacity = 1.0 if total_signal_count < 50 else 0.6 if total_signal_count < 100 else 0.4
+        cluster_edge_color = f"rgba(244, 176, 0, {edge_opacity})"
+        
+        for s, emb in visible_signals:
             G.add_edge(
                 cluster_node_id,
                 s["signal_id"],
                 value=0.9,
-                color="#f4b000",
+                color=cluster_edge_color,
                 smooth=False  # Straight lines
+            )
+        
+        # Add "+N more" collapsed node if there are hidden signals
+        if hidden_count > 0:
+            collapsed_node_id = f"collapsed_{cluster_id}"
+            G.add_node(
+                collapsed_node_id,
+                label=f"+{hidden_count} more",
+                title=f"This cluster has {hidden_count} more signals not shown in the graph.\nSelect the cluster below to view all {total_signal_count} signals.",
+                size=12,
+                color="#ff9500",
+                font={"size": 14, "color": "white"},
+                physics=True,
+                borderWidth=0,
+                borderWidthSelected=0,
+                shape='box'
+            )
+            
+            # Connect collapsed node to cluster hub
+            G.add_edge(
+                cluster_node_id,
+                collapsed_node_id,
+                value=0.9,
+                color="#ff9500",
+                smooth=False,
+                dashes=True
             )
 
     # Cross-cluster edges

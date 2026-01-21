@@ -7,8 +7,8 @@ import argparse
 from src.ingestion.rss_ingestor import ingest_rss_feed
 from src.ingestion.signal import Signal
 from src.embeddings.embedding_model import EmbeddingModel
-from src.memory.qdrant_client import QdrantMemory
-from src.memory.cluster_memory import ClusterMemory
+# from src.memory.qdrant_client import QdrantMemory  # Lazy import to avoid pydantic issues
+# from src.memory.cluster_memory import ClusterMemory  # Lazy import
 from src.memory.candidate_store import load_candidates, save_candidates
 from src.clustering.contextualizer import contextualize_signal
 from src.clustering.persistence import check_persistence
@@ -70,14 +70,30 @@ def main(reset_seen_ids=False):
 
     # 2) Initialize models & memory
     embedding_model = EmbeddingModel()
-    signal_memory = QdrantMemory(
-        collection_name="signals_hot",
-        vector_size=VECTOR_SIZE
-    )
-    cluster_memory = ClusterMemory(
-        collection_name="clusters_warm",
-        vector_size=VECTOR_SIZE
-    )
+    
+    # Lazy import to avoid pydantic schema generation issues
+    try:
+        from src.memory.qdrant_client import QdrantMemory
+        signal_memory = QdrantMemory(
+            collection_name="signals_hot",
+            vector_size=VECTOR_SIZE
+        )
+    except Exception as e:
+        print(f"[WARNING] Could not initialize Qdrant memory: {e}")
+        print("[INFO] Using simplified memory storage")
+        signal_memory = None
+    
+    # Lazy import to avoid pydantic schema generation issues
+    try:
+        from src.memory.cluster_memory import ClusterMemory
+        cluster_memory = ClusterMemory(
+            collection_name="clusters_warm",
+            vector_size=VECTOR_SIZE
+        )
+    except Exception as e:
+        print(f"[WARNING] Could not initialize cluster memory: {e}")
+        print("[INFO] Using simplified cluster storage")
+        cluster_memory = None
 
     # 3) Collect embeddings with signals
     signals_with_embeddings = []
@@ -91,23 +107,36 @@ def main(reset_seen_ids=False):
 
     # 4) Store signals in memory
     embeddings = [item["embedding"] for item in signals_with_embeddings]
-    signal_memory.upsert_signals(all_new_signals, embeddings)
+    if signal_memory:
+        signal_memory.upsert_signals(all_new_signals, embeddings)
+    else:
+        print("[INFO] Skipping signal storage to vector memory")
 
     # 5) Run intra-batch clustering (STAGE 1: Loose semantic grouping)
     batch_clusters = cluster_batch(
         signals_with_embeddings,
-        similarity_threshold=0.45
+        similarity_threshold=0.50  # Higher threshold for broader clusters
     )
 
     # 6) Evolve candidate clusters (merge new batch clusters into existing candidates)
+    print(f"[DEBUG] Before evolution: {len(candidate_clusters)} existing candidates, {len(batch_clusters)} new batch clusters")
     candidate_clusters = evolve_clusters(
         existing_candidates=candidate_clusters,
         new_batch_clusters=batch_clusters,
         embedding_model=embedding_model,
-        similarity_threshold=0.70
+        similarity_threshold=0.40  # Even lower threshold for easier merging
     )
+    print(f"[DEBUG] After evolution: {len(candidate_clusters)} total candidates")
 
     print(f"[INFO] Total candidate clusters: {len(candidate_clusters)}")
+
+    # Show signal count distribution
+    signal_counts = [c["signal_count"] for c in candidate_clusters]
+    total_signals = sum(signal_counts)
+    print(f"[INFO] Total signals across all candidates: {total_signals}")
+    print(f"[INFO] Average signals per cluster: {total_signals / len(candidate_clusters):.1f}")
+    print(f"[INFO] Largest cluster: {max(signal_counts)} signals")
+    print(f"[INFO] Clusters with ≥3 signals: {len([c for c in candidate_clusters if c['signal_count'] >= 3])}")
 
     # 7) Split candidate vs active (same logic as before)
     ACTIVE_MIN = 3
@@ -124,11 +153,14 @@ def main(reset_seen_ids=False):
     print(f"[INFO] Active clusters (≥3 signals, shown in feed): {len(active_clusters)}")
 
     # Store active clusters in warm memory
-    for active_cluster in active_clusters:
-        cluster_memory.upsert_cluster(
-            proto_cluster=active_cluster,
-            embedding_model=embedding_model
-        )
+    if cluster_memory:
+        for active_cluster in active_clusters:
+            cluster_memory.upsert_cluster(
+                proto_cluster=active_cluster,
+                embedding_model=embedding_model
+            )
+    else:
+        print("[INFO] Skipping cluster storage to vector memory")
 
     # Save candidate clusters to disk (cold memory)
     save_candidates(candidate_clusters)
