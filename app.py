@@ -171,7 +171,7 @@ if active_clusters:
     if total_pages > 1:
         st.markdown(f"*Showing clusters {start_idx + 1}–{end_idx} of {len(feed)}*")
 
-    for item in page_feed:
+    for idx, item in enumerate(page_feed):
         with st.container():
             # Get filtered cluster data for display
             cluster_data = next(c for c in active_clusters if c["cluster_id"] == item["cluster_id"])
