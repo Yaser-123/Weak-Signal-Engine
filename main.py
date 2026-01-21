@@ -1,8 +1,13 @@
 # main.py
 
+import os
 import uuid
 from datetime import datetime, UTC
 import argparse
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from src.ingestion.rss_ingestor import ingest_rss_feed
 from src.ingestion.signal import Signal

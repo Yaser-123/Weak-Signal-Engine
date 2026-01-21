@@ -1,5 +1,6 @@
 # src/memory/cluster_memory.py
 
+import os
 from typing import Dict, Any, List
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
@@ -8,17 +9,33 @@ from src.embeddings.embedding_model import EmbeddingModel
 
 
 class ClusterMemory:
-    def __init__(self, collection_name: str, vector_size: int):
-        self.client = QdrantClient(":memory:")
+    def __init__(self, collection_name: str, vector_size: int, use_cloud: bool = True):
+        # Use Qdrant Cloud if credentials available, otherwise fallback to in-memory
+        if use_cloud and os.getenv("QDRANT_URL") and os.getenv("QDRANT_API_KEY"):
+            self.client = QdrantClient(
+                url=os.getenv("QDRANT_URL"),
+                api_key=os.getenv("QDRANT_API_KEY"),
+            )
+            print(f"[INFO] ClusterMemory connected to Qdrant Cloud")
+        else:
+            self.client = QdrantClient(":memory:")
+            print("[INFO] ClusterMemory using in-memory mode")
+        
         self.collection_name = collection_name
 
-        self.client.recreate_collection(
-            collection_name=self.collection_name,
-            vectors_config=VectorParams(
-                size=vector_size,
-                distance=Distance.COSINE
+        # Check if collection exists, create only if needed (don't recreate!)
+        try:
+            self.client.get_collection(collection_name)
+            print(f"[INFO] Collection '{collection_name}' already exists")
+        except Exception:
+            print(f"[INFO] Creating collection '{collection_name}'")
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=Distance.COSINE
+                )
             )
-        )
 
     def upsert_cluster(
         self,

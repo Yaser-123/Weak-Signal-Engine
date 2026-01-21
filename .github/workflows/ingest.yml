@@ -1,0 +1,36 @@
+name: Automated RSS Ingestion
+
+on:
+  schedule:
+    # Run daily at 12:00 PM UTC (adjust timezone as needed)
+    - cron: '0 12 * * *'
+  
+  # Manual trigger
+  workflow_dispatch:
+
+jobs:
+  ingest-signals:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run RSS ingestion
+        env:
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python main.py
+          echo "✅ RSS ingestion complete!"
+          echo "Note: New signals and clusters saved to Qdrant Cloud"
+          echo "Title generation happens only in Streamlit app for new clusters"

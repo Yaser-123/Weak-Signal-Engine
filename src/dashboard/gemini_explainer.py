@@ -6,6 +6,8 @@ import time
 import hashlib
 import json
 from pathlib import Path
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Distance, VectorParams, PointStruct
 
 # Load environment variables
 load_dotenv()
@@ -15,29 +17,139 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Persistent cache file
+# Persistent cache file (fallback only)
 CACHE_FILE = Path("cluster_title_cache.json")
+CACHE_COLLECTION = "cluster_titles"
 
-# Cache for cluster titles to avoid redundant API calls
+# In-memory cache for this session
 _title_cache = {}
 
 
+def _get_qdrant_client():
+    """Get Qdrant Cloud client if credentials available."""
+    if os.getenv("QDRANT_URL") and os.getenv("QDRANT_API_KEY"):
+        try:
+            return QdrantClient(
+                url=os.getenv("QDRANT_URL"),
+                api_key=os.getenv("QDRANT_API_KEY"),
+                timeout=30
+            )
+        except Exception as e:
+            print(f"[WARNING] Failed to connect to Qdrant: {e}")
+            return None
+    return None
+
+
+def _ensure_cache_collection():
+    """Ensure the cluster_titles collection exists in Qdrant."""
+    client = _get_qdrant_client()
+    if not client:
+        return False
+    
+    try:
+        client.get_collection(CACHE_COLLECTION)
+        return True
+    except Exception:
+        try:
+            # Create collection with minimal vector (just 1 dimension - we only need key-value storage)
+            client.create_collection(
+                collection_name=CACHE_COLLECTION,
+                vectors_config=VectorParams(
+                    size=1,
+                    distance=Distance.COSINE
+                )
+            )
+            return True
+        except Exception as e:
+            print(f"[WARNING] Could not create cache collection: {e}")
+            return False
+
+
 def _load_cache():
-    """Load title cache from disk."""
+    """Load title cache from Qdrant Cloud or fallback to disk."""
     global _title_cache
+    
+    # Try loading from Qdrant Cloud first
+    client = _get_qdrant_client()
+    if client and _ensure_cache_collection():
+        try:
+            offset = None
+            while True:
+                response = client.scroll(
+                    collection_name=CACHE_COLLECTION,
+                    limit=100,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False
+                )
+                points, next_offset = response
+                
+                if not points:
+                    break
+                
+                for point in points:
+                    cluster_id = point.payload.get("cluster_id")
+                    title = point.payload.get("title")
+                    if cluster_id and title:
+                        _title_cache[cluster_id] = title
+                
+                if next_offset is None:
+                    break
+                offset = next_offset
+            
+            print(f"[INFO] Loaded {len(_title_cache)} titles from Qdrant Cloud cache")
+            return
+        except Exception as e:
+            print(f"[WARNING] Could not load cache from Qdrant: {e}")
+    
+    # Fallback to local file
     if CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
                 _title_cache = json.load(f)
+            print(f"[INFO] Loaded {len(_title_cache)} titles from local cache file")
         except Exception as e:
-            print(f"Warning: Could not load title cache: {e}")
+            print(f"[WARNING] Could not load title cache from file: {e}")
             _title_cache = {}
     else:
         _title_cache = {}
 
 
+def _save_cache_to_cloud(cluster_id: str, title: str):
+    """Save a single title to Qdrant Cloud cache."""
+    client = _get_qdrant_client()
+    if not client or not _ensure_cache_collection():
+        # Fallback to local file
+        _save_cache()
+        return False
+    
+    try:
+        # Use hash of cluster_id as point ID
+        point_id = int(hashlib.md5(cluster_id.encode()).hexdigest()[:8], 16)
+        
+        point = PointStruct(
+            id=point_id,
+            vector=[0.0],  # Dummy vector (we only need key-value storage)
+            payload={
+                "cluster_id": cluster_id,
+                "title": title,
+                "updated_at": time.time()
+            }
+        )
+        
+        client.upsert(
+            collection_name=CACHE_COLLECTION,
+            points=[point]
+        )
+        return True
+    except Exception as e:
+        print(f"[WARNING] Could not save to Qdrant cache: {e}")
+        _save_cache()  # Fallback to local file
+        return False
+
+
 def _save_cache():
-    """Save title cache to disk."""
+    """Save title cache to local file (fallback only)."""
     try:
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(_title_cache, f, ensure_ascii=False, indent=2)
@@ -113,9 +225,12 @@ Output ONLY the title, nothing else."""
         if len(title.split()) > 12:
             title = " ".join(title.split()[:10]) + "..."
         
-        # Cache the result and save to disk
+        # Cache the result in memory and save to Qdrant Cloud
         _title_cache[cache_key] = title
-        _save_cache()
+        if cluster_id:
+            _save_cache_to_cloud(cluster_id, title)
+        else:
+            _save_cache()  # Fallback to local file for non-cluster-id keys
         
         return title
         
@@ -124,7 +239,10 @@ Output ONLY the title, nothing else."""
         # Cache fallback too
         fallback = _fallback_title(signals)
         _title_cache[cache_key] = fallback
-        _save_cache()
+        if cluster_id:
+            _save_cache_to_cloud(cluster_id, fallback)
+        else:
+            _save_cache()
         return fallback
 
 
