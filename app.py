@@ -207,7 +207,7 @@ if active_clusters:
                     signal_page = st.selectbox(
                         f"Signals page (showing {signals_per_page} per page)",
                         range(1, total_signal_pages + 1),
-                        key=f"signals_page_{cluster_data['cluster_id']}"
+                        key=f"signals_page_{idx}_{cluster_data['cluster_id']}"
                     )
                 else:
                     signal_page = 1
@@ -226,20 +226,20 @@ if active_clusters:
             # Cluster Explainer Chat
             st.markdown("#### 💬 Ask about this cluster")
             
-            # Create unique key for each cluster's chat
-            chat_key = f"chat_{cluster_data['cluster_id']}"
-            question_key = f"question_{cluster_data['cluster_id']}"
+            # Create unique key for each cluster's chat (with index to avoid duplicates)
+            chat_key = f"chat_{idx}_{cluster_data['cluster_id']}"
+            question_key = f"question_{idx}_{cluster_data['cluster_id']}"
             
             # Common questions as buttons
             col1, col2, col3 = st.columns(3)
             with col1:
-                if st.button("Why is this emerging?", key=f"why_{cluster_data['cluster_id']}"):
+                if st.button("Why is this emerging?", key=f"why_{idx}_{cluster_data['cluster_id']}"):
                     st.session_state[question_key] = "Why is this emerging?"
             with col2:
-                if st.button("Who should care?", key=f"who_{cluster_data['cluster_id']}"):
+                if st.button("Who should care?", key=f"who_{idx}_{cluster_data['cluster_id']}"):
                     st.session_state[question_key] = "Who should care about this?"
             with col3:
-                if st.button("What could happen next?", key=f"next_{cluster_data['cluster_id']}"):
+                if st.button("What could happen next?", key=f"next_{idx}_{cluster_data['cluster_id']}"):
                     st.session_state[question_key] = "What could happen next?"
             
             # Custom question input
