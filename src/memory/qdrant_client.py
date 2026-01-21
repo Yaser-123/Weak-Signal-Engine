@@ -38,11 +38,26 @@ class QdrantMemory:
             )
 
     def upsert_signals(self, signals: List[Signal], embeddings: List[List[float]]):
+        # Get current max ID to avoid overwriting existing signals
+        try:
+            # Scroll to get any point to check collection size
+            scroll_result = self.client.scroll(
+                collection_name=self.collection_name,
+                limit=1,
+                with_payload=False,
+                with_vectors=False
+            )
+            # Get collection info to find next available ID
+            collection_info = self.client.get_collection(self.collection_name)
+            current_count = collection_info.points_count
+            start_id = current_count + 1
+        except Exception:
+            start_id = 1
+        
         points = []
-
         for i, (signal, vector) in enumerate(zip(signals, embeddings)):
             point = PointStruct(
-                id=i + 1,  # Use integer ID starting from 1
+                id=start_id + i,  # Auto-increment from last ID
                 vector=vector,
                 payload=signal.to_dict()
             )
@@ -52,6 +67,7 @@ class QdrantMemory:
             collection_name=self.collection_name,
             points=points
         )
+        print(f"[INFO] Upserted {len(points)} signals to Qdrant (IDs {start_id}-{start_id + len(points) - 1})")
 
     def search_similar_signals(
         self,

@@ -47,12 +47,19 @@ class ClusterMemory:
 
         vector = embedding_model.embed(combined_text)
 
+        # Convert UUID string to integer ID for Qdrant
+        import hashlib
+        cluster_id_str = proto_cluster["cluster_id"]
+        cluster_id_int = int(hashlib.md5(cluster_id_str.encode()).hexdigest()[:8], 16)
+
         point = PointStruct(
-            id=proto_cluster["cluster_id"],
+            id=cluster_id_int,  # Use hash of UUID as integer ID
             vector=vector,
             payload={
+                "cluster_id": cluster_id_str,  # Keep original UUID in payload
                 "signal_count": proto_cluster["signal_count"],
-                "created_at": proto_cluster["created_at"]
+                "created_at": proto_cluster["created_at"],
+                "member_signal_ids": [s["signal_id"] for s in proto_cluster["signals"]]
             }
         )
 
