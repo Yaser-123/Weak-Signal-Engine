@@ -187,7 +187,8 @@ def generate_human_cluster_title(signals: List[str], cluster_id: str = None, use
     
     # Use cluster_id as cache key if available, otherwise fall back to signal-based key
     if cluster_id:
-        cache_key = f"cluster_{cluster_id}"
+        # cluster_id is already the UUID, don't add prefix (cache stores it directly)
+        cache_key = cluster_id
     else:
         cache_key = _get_cache_key(signals)
     
