@@ -1,11 +1,28 @@
-# Add your dependencies here
-sentence-transformers
-qdrant-client
-feedparser
-numpy
+# Core dependencies for SignalWeave Dashboard
+# Pinned versions for Streamlit Cloud deployment
+
+# Vector embeddings & ML
+sentence-transformers>=2.2.2
+torch>=2.0.0
+
+# Vector database
+qdrant-client>=1.7.0
+
+# RSS ingestion
+feedparser>=6.0.10
+
+# Data processing
+numpy>=1.24.0
+
+# Dashboard UI (CRITICAL: pin exact version for consistent styling)
 streamlit==1.54.0
-networkx
-pyvis
-google-generativeai
-python-dotenv
-torch
+
+# Graph visualization
+networkx>=3.1
+pyvis>=0.3.2
+
+# LLM integration
+google-generativeai>=0.3.0
+
+# Configuration
+python-dotenv>=1.0.0

@@ -12,6 +12,7 @@ venv/
 # Environment variables and API keys
 .env
 *.env.local
+.streamlit/secrets.toml
 
 # Gemini API cache
 cluster_title_cache.json
