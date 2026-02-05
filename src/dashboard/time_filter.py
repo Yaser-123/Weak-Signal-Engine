@@ -115,10 +115,11 @@ def filter_clusters_by_time(
             
             # Also filter embeddings if present
             if "embeddings" in cluster and len(cluster["embeddings"]) == original_count:
-                # Map filtered signals to their original indices
+                # Map filtered signals to their original indices by signal_id
+                recent_signal_ids = {s.get("signal_id") for s in recent_signals}
                 filtered_embeddings = []
                 for i, signal in enumerate(original_signals):
-                    if signal in recent_signals:
+                    if signal.get("signal_id") in recent_signal_ids:
                         filtered_embeddings.append(cluster["embeddings"][i])
                 filtered_cluster["embeddings"] = filtered_embeddings
             

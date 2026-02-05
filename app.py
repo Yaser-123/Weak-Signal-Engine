@@ -9,6 +9,8 @@ from src.dashboard.search import search_clusters_hybrid
 from src.dashboard.time_filter import compute_time_slider_bounds, filter_clusters_by_time
 from src.dashboard.utils import format_signal_date
 from src.embeddings.embedding_model import EmbeddingModel
+from src.scoring.grounding_agent import compute_cluster_grounding
+from src.scoring.emergence import compute_emergence
 from streamlit.components.v1 import html
 
 st.set_page_config(page_title="Weak Signal Engine", layout="wide")
@@ -87,6 +89,10 @@ if search_button and search_query:
                     original_cluster = next(c for c in original_candidates if c["cluster_id"] == result["cluster_id"])
                     all_signals = original_cluster["signals"]
                     
+                    # Compute emergence metrics for grounding
+                    emergence = compute_emergence(result, recent_days=30)
+                    result["growth_ratio"] = emergence["growth_ratio"]
+                    
                     # Generate title using filtered signals
                     signal_texts = [s['text'] for s in result["signals"]]
                     cluster_id = result["cluster_id"]
@@ -96,6 +102,10 @@ if search_button and search_query:
                     badge_color = "🔥" if result["cluster_type"] == "Active" else "🌱"
                     
                     st.markdown(f"### {badge_color} {title}")
+                    
+                    # Display Grounding metrics
+                    grounding = compute_cluster_grounding(result)
+                    st.caption(f"🧠 **Grounding:** {grounding['explanation']}")
                     
                     # Display scores in 5 columns
                     col_a, col_b, col_c, col_d, col_e = st.columns(5)
@@ -176,6 +186,9 @@ if active_clusters:
             # Get filtered cluster data for display
             cluster_data = next(c for c in active_clusters if c["cluster_id"] == item["cluster_id"])
             
+            # Add growth_ratio from feed item for grounding computation
+            cluster_data["growth_ratio"] = item["growth_ratio"]
+            
             # Get original cluster data for full signal list
             original_cluster = next(c for c in original_candidates if c["cluster_id"] == item["cluster_id"])
             all_signals = original_cluster["signals"]
@@ -187,6 +200,10 @@ if active_clusters:
             cluster_id = cluster_data["cluster_id"]
             label = generate_human_cluster_title(signal_texts, cluster_id=cluster_id)
             st.markdown(f"### 📈 {label}")
+            
+            # Display Grounding metrics
+            grounding = compute_cluster_grounding(cluster_data)
+            st.caption(f"🧠 **Grounding:** {grounding['explanation']}")
 
             st.write(
                 f"**Size:** {item['signal_count']}  |  "

@@ -26,3 +26,11 @@ cluster_graph.html
 # Test files
 test_hybrid_search.py
 cleanup_duplicates.py
+
+# One-time utility scripts (not part of main application)
+check_cluster_ids.py
+export_to_pdf.py
+generate_manual_titles.py
+push_correct_titles.py
+push_titles.py
+requirements_pdf.txt
