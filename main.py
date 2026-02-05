@@ -21,6 +21,8 @@ from src.clustering.proto_cluster import create_proto_cluster
 from src.clustering.intra_batch_cluster import cluster_batch
 from src.clustering.cluster_evolution import evolve_clusters
 from src.dashboard.feed import build_emerging_feed
+from src.scoring.critic_agent import evaluate_cluster
+from src.scoring.controller_agent import controller_decide
 
 VECTOR_SIZE = 384
 
@@ -143,19 +145,47 @@ def main(reset_seen_ids=False):
     print(f"[INFO] Largest cluster: {max(signal_counts)} signals")
     print(f"[INFO] Clusters with ≥3 signals: {len([c for c in candidate_clusters if c['signal_count'] >= 3])}")
 
-    # 7) Split candidate vs active (same logic as before)
-    ACTIVE_MIN = 3
+    # 7) Critic + Controller Agent Evaluation
+    print("\n[INFO] Running Critic + Controller evaluation...")
+    
+    promoted_clusters = []
+    candidate_pool = []
+    demoted_clusters = []
+    
+    for cluster in candidate_clusters:
+        # Critic evaluates cluster quality
+        critic_report = evaluate_cluster(cluster)
+        
+        # Controller makes final decision
+        controller_decision = controller_decide(cluster, critic_report)
+        
+        # Attach evaluation metadata to cluster
+        cluster["critic_report"] = critic_report
+        cluster["controller_decision"] = controller_decision
+        
+        # Route cluster based on controller's decision
+        final_action = controller_decision["final_action"]
+        
+        if final_action == "promote":
+            promoted_clusters.append(cluster)
+        elif final_action == "keep_candidate":
+            candidate_pool.append(cluster)
+        else:  # demote_wait
+            demoted_clusters.append(cluster)
+    
+    print(f"[INFO] Critic+Controller Results:")
+    print(f"  - Promoted to Active: {len(promoted_clusters)}")
+    print(f"  - Kept as Candidates: {len(candidate_pool)}")
+    print(f"  - Demoted (waiting): {len(demoted_clusters)}")
+    
+    # Active clusters are those promoted by controller
+    active_clusters = promoted_clusters
+    
+    # Keep all candidates (including demoted) for future evolution
+    quiet_candidates = candidate_pool + demoted_clusters
 
-    quiet_candidates = [
-        c for c in candidate_clusters if c["signal_count"] < ACTIVE_MIN
-    ]
-
-    active_clusters = [
-        c for c in candidate_clusters if c["signal_count"] >= ACTIVE_MIN
-    ]
-
-    print(f"[INFO] Quiet candidates (1-2 signals, stored quietly): {len(quiet_candidates)}")
-    print(f"[INFO] Active clusters (≥3 signals, shown in feed): {len(active_clusters)}")
+    print(f"[INFO] Active clusters (controller-promoted): {len(active_clusters)}")
+    print(f"[INFO] Quiet candidates (stored for future): {len(quiet_candidates)}")
 
     # Store active clusters in warm memory
     if cluster_memory:

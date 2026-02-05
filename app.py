@@ -107,6 +107,26 @@ if search_button and search_query:
                     grounding = compute_cluster_grounding(result)
                     st.caption(f"🧠 **Grounding:** {grounding['explanation']}")
                     
+                    # Display Critic + Controller evaluation if available
+                    if "critic_report" in result and "controller_decision" in result:
+                        critic = result["critic_report"]
+                        controller = result["controller_decision"]
+                        
+                        # Format flags
+                        flags_str = ", ".join(critic.get("flags", [])) if critic.get("flags") else "none"
+                        
+                        # Confidence badge
+                        confidence = critic.get("confidence", "unknown")
+                        if confidence == "high":
+                            confidence_badge = "🟢 High"
+                        elif confidence == "medium":
+                            confidence_badge = "🟡 Medium"
+                        else:
+                            confidence_badge = "🔴 Low"
+                        
+                        st.caption(f"🧪 **Critic:** {confidence_badge} | Flags: {flags_str}")
+                        st.caption(f"🤖 **Controller:** {controller.get('decision_trace', 'No trace')}")
+                    
                     # Display scores in 5 columns
                     col_a, col_b, col_c, col_d, col_e = st.columns(5)
                     with col_a:
@@ -204,6 +224,26 @@ if active_clusters:
             # Display Grounding metrics
             grounding = compute_cluster_grounding(cluster_data)
             st.caption(f"🧠 **Grounding:** {grounding['explanation']}")
+            
+            # Display Critic + Controller evaluation if available
+            if "critic_report" in cluster_data and "controller_decision" in cluster_data:
+                critic = cluster_data["critic_report"]
+                controller = cluster_data["controller_decision"]
+                
+                # Format flags
+                flags_str = ", ".join(critic.get("flags", [])) if critic.get("flags") else "none"
+                
+                # Confidence badge with color
+                confidence = critic.get("confidence", "unknown")
+                if confidence == "high":
+                    confidence_badge = "🟢 High"
+                elif confidence == "medium":
+                    confidence_badge = "🟡 Medium"
+                else:
+                    confidence_badge = "🔴 Low"
+                
+                st.caption(f"🧪 **Critic:** {confidence_badge} | Flags: {flags_str}")
+                st.caption(f"🤖 **Controller:** {controller.get('decision_trace', 'No trace')}")
 
             st.write(
                 f"**Size:** {item['signal_count']}  |  "
