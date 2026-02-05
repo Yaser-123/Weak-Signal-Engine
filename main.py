@@ -23,6 +23,7 @@ from src.clustering.cluster_evolution import evolve_clusters
 from src.dashboard.feed import build_emerging_feed
 from src.scoring.critic_agent import evaluate_cluster
 from src.scoring.controller_agent import controller_decide
+from src.dashboard.gemini_explainer import generate_human_cluster_title
 
 VECTOR_SIZE = 384
 
@@ -187,17 +188,31 @@ def main(reset_seen_ids=False):
     print(f"[INFO] Active clusters (controller-promoted): {len(active_clusters)}")
     print(f"[INFO] Quiet candidates (stored for future): {len(quiet_candidates)}")
 
-    # Store active clusters in warm memory
+    # Store ALL clusters (active + candidates) to Qdrant warm memory
     if cluster_memory:
-        for active_cluster in active_clusters:
+        new_cluster_count = 0
+        for cluster in candidate_clusters:
             cluster_memory.upsert_cluster(
-                proto_cluster=active_cluster,
+                proto_cluster=cluster,
                 embedding_model=embedding_model
             )
+            new_cluster_count += 1
+        
+        print(f"[INFO] Upserted {len(candidate_clusters)} clusters to Qdrant Cloud")
+        
+        # Generate titles for newly created clusters
+        if new_cluster_count > 0:
+            print(f"[INFO] Generating titles for {new_cluster_count} new clusters...")
+            for cluster in candidate_clusters:
+                signal_texts = [s["text"] for s in cluster["signals"]]
+                cluster_id = cluster["cluster_id"]
+                title = generate_human_cluster_title(signal_texts, cluster_id=cluster_id, use_cache=True)
+                print(f"  [{cluster_id[:8]}...] → {title}")
+            print(f"✅ Generated {new_cluster_count} cluster titles")
     else:
         print("[INFO] Skipping cluster storage to vector memory")
 
-    # Save candidate clusters to disk (cold memory)
+    # Also save to disk as backup
     save_candidates(candidate_clusters)
     print(f"[INFO] Saved candidate clusters to disk: {len(candidate_clusters)}")
 

@@ -124,12 +124,10 @@ def _save_cache_to_cloud(cluster_id: str, title: str):
         return False
     
     try:
-        # Use hash of cluster_id as point ID
-        point_id = int(hashlib.md5(cluster_id.encode()).hexdigest()[:8], 16)
-        
+        # Use cluster_id directly as string UUID (avoids hash collisions)
         point = PointStruct(
-            id=point_id,
-            vector=[0.0],  # Dummy vector (we only need key-value storage)
+            id=cluster_id,  # Qdrant supports string UUIDs as point IDs
+            vector=[0.0] * 384,  # Match collection dimension (384)
             payload={
                 "cluster_id": cluster_id,
                 "title": title,
@@ -194,11 +192,14 @@ def generate_human_cluster_title(signals: List[str], cluster_id: str = None, use
     
     # Check cache first
     if use_cache and cache_key in _title_cache:
+        # Ensure it's also saved to Qdrant (in case it's only in memory)
+        if cluster_id:
+            _save_cache_to_cloud(cluster_id, _title_cache[cache_key])
         return _title_cache[cache_key]
     
     try:
-        # Prepare signal texts (limit to first 5 for API efficiency)
-        signal_sample = signals[:5]
+        # Prepare signal texts (limit to 1-5 signals to prevent hallucination on large clusters)
+        signal_sample = signals[:5] if len(signals) >= 5 else signals[:max(1, len(signals))]
         signal_text = "\n".join([f"- {s[:150]}" for s in signal_sample])  # Truncate long signals
         
         # Prompt for title generation
@@ -216,8 +217,8 @@ Requirements:
 
 Output ONLY the title, nothing else."""
 
-        # Use gemini-2.5-flash (latest stable model)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # Use gemini-2.5-flash-lite (faster, prevents hallucination)
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         response = model.generate_content(prompt)
         
         title = response.text.strip()

@@ -72,6 +72,7 @@ def load_candidates_from_qdrant() -> List[Dict[str, Any]]:
         # Now load clusters
         print("[INFO] Loading clusters from Qdrant Cloud...")
         clusters = []
+        seen_cluster_ids = set()  # Track seen cluster IDs to avoid duplicates
         offset = None
         
         while True:
@@ -80,7 +81,7 @@ def load_candidates_from_qdrant() -> List[Dict[str, Any]]:
                 limit=100,
                 offset=offset,
                 with_payload=True,
-                with_vectors=False
+                with_vectors=True  # Need vectors for centroid
             )
             
             points, next_offset = response
@@ -91,6 +92,12 @@ def load_candidates_from_qdrant() -> List[Dict[str, Any]]:
             # For each cluster, fetch its signals from memory
             for point in points:
                 cluster_id = point.payload.get("cluster_id")
+                
+                # Skip if we've already loaded this cluster (deduplication)
+                if cluster_id in seen_cluster_ids:
+                    continue
+                seen_cluster_ids.add(cluster_id)
+                
                 member_signal_ids = point.payload.get("member_signal_ids", [])
                 
                 # Get signals and embeddings from memory
@@ -107,7 +114,12 @@ def load_candidates_from_qdrant() -> List[Dict[str, Any]]:
                     "embeddings": embeddings,
                     "signal_count": len(signals),
                     "created_at": point.payload.get("created_at"),
-                    "last_updated": point.payload.get("last_updated", point.payload.get("created_at"))
+                    "last_updated": point.payload.get("last_updated", point.payload.get("created_at")),
+                    "centroid": point.vector,  # Load centroid vector
+                    "growth_ratio": point.payload.get("growth_ratio", 1.0),
+                    # Load critic and controller evaluation metadata
+                    "critic_report": point.payload.get("critic_report"),
+                    "controller_decision": point.payload.get("controller_decision")
                 }
                 clusters.append(cluster)
             
@@ -115,7 +127,7 @@ def load_candidates_from_qdrant() -> List[Dict[str, Any]]:
                 break
             offset = next_offset
         
-        print(f"[INFO] Loaded {len(clusters)} clusters from Qdrant Cloud")
+        print(f"[INFO] Loaded {len(clusters)} unique clusters from Qdrant Cloud")
         return clusters
     
     except Exception as e:

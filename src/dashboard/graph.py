@@ -7,6 +7,8 @@ import math
 MAX_SIGNALS_PER_CLUSTER = 25
 
 def cosine(a, b):
+    if a is None or b is None:
+        return 0.0
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 def build_cluster_graph(clusters, threshold=0.55):
